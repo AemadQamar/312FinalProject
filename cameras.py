@@ -33,14 +33,15 @@ yellowHighMask = (30, 255, 255)
 class Tracker:
 
     def __init__(self, ballColor):
+        self.ready = False
 
         self.left_cam_extrinsic = np.hstack((np.eye(3), np.zeros((3,1)))) ## cam 1 facing z axis
-        # self.right_cam_extrinsic = np.array([[0,0,1,-1],  ## Assuming camera two is negative x and position is (1,0,1)
-        #                                     [0,0,0,0],
-        #                                     [1,0,0,1]], dtype=float)
-        self.right_cam_extrinsic = np.array([[np.cos(np.pi/4),0,-np.sin(np.pi/4),0.782],
-                                             [np.sin(np.pi/4),1,np.cos(np.pi/4),0.17],
-                                             [0,0,1,0]])
+        self.right_cam_extrinsic = np.array([[1,0,0,0.3],  ## Assuming camera two is negative x and position is (1,0,1)
+                                            [0,1,0,0.16],
+                                            [0,0,1,0]], dtype=float)
+        # self.right_cam_extrinsic = np.array([[np.cos(np.pi/4),0,-np.sin(np.pi/4),0.782],
+        #                                      [np.sin(np.pi/4),1,np.cos(np.pi/4),0.17],
+        #                                      [0,0,1,0]])
 
         self.left_cam_matrix = np.eye(3,3)
         self.right_cam_matrix = np.eye(3,3)
@@ -73,6 +74,7 @@ class Tracker:
         else:
             print("One or Both Cameras not found")
             return
+        self.ready == True
 
 
         # background_left = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=False)
@@ -325,6 +327,9 @@ class Tracker:
         return (self.left_point[0][2] + self.right_point[0][2]) /2 ## double check if this works
 
     def getAccurateBallPosition(self):
+
+        if(self.left_point is None or self.right_point is None):
+            return None
 
         ## Get Points
         u_left,v_left = self.left_point[0][:2]

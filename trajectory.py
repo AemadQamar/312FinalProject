@@ -10,8 +10,6 @@ class TrajectoryPlanner:
 
     def initializeTracker(self):
         self.tracker = cameras.Tracker('b')
-        while (self.tracker.ready == False):
-            time.sleep(0.3)
         input("Press Enter to Begin Calibration")
         self.tracker.Calibrate()
     
@@ -19,11 +17,27 @@ class TrajectoryPlanner:
         self.tracker.left_point = None ## reset ball positions
         self.tracker.right_point = None
         time.sleep(0.02)
-        while (self.tracker.left_point is None or self.tracker.right_point is None):
-            time.sleep(0.02)
-        points = []
-        time_arr = []
-        start_time = time.time()
+        started = 0 
+        while started < 2:
+            points = []
+            time_arr = []
+            start_time = time.time()
+            started = 0
+            for i in range(3):
+                pos = self.tracker.getAccurateBallPosition()
+                if (pos is None):
+                    continue
+                else:
+                    started += 1
+                    points.append(pos)
+                    time_arr.append(time.time()-start_time)
+                time.sleep(0.02)
+        print("throw started.")
+
+        for i in range(3):
+            if (points[i] is None):
+                points.pop(i)
+
         while len(points) < iterations:
             pos = self.tracker.getAccurateBallPosition()
             if (pos is None):
@@ -32,7 +46,6 @@ class TrajectoryPlanner:
             time_arr.append(time.time()-start_time)
             if (len(points) > 3):
                 self.endpoint = self.findEndPoint(points, time_arr)
-                print(self.endpoint)
         print("Final Endpoint found:", self.endpoint)
 
     def findEndPoint(self,points, time_arr): ## points and their associated times
@@ -46,8 +59,8 @@ class TrajectoryPlanner:
         vz, z = np.polyfit(time_arr,zList,1) ## linear motion
 
 
-        n = np.array([0,1/np.sqrt(2),-1/np.sqrt(2)]) ## plane normal vector
-        r = np.array([0,0,2]) ## plane reference point
+        n = np.array([0,1,0]) ## plane normal vector
+        r = np.array([0,0,0]) ## plane reference point
 
         a = ay * n[1]
         b = vx*n[0] + vy*n[1] + vz*n[2]
@@ -63,7 +76,11 @@ class TrajectoryPlanner:
         end_x = x + vx *t
         end_y = y + vy*t + ay* t**2
         end_z = z + vz *t
+        print(a, b, c)
         return (np.array([end_x,end_y,end_z]))
 
 if __name__ == "__main__":
     planner = TrajectoryPlanner()
+    planner.initializeTracker()
+    while 1:
+        planner.endPointFinder(20)
