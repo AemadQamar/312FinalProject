@@ -34,6 +34,7 @@ distCoeff = np.zeros((5,1))
 camera = None
 point = None
 frame = None
+out = None
 
 async def TrackerInitialize():
     global point
@@ -41,32 +42,31 @@ async def TrackerInitialize():
     global distCoeff
     global cam_matrix
     global camera
+    global out
 
     print("Tracker Started")
     # Get the cameras
     camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
     camera.Open()
-    # camera.PixelFormat.SetValue("RGB8")
-    # camera.ExposureAuto.SetValue("Off")
-    # camera.GainAuto.SetValue("Off")
-    # camera.ExposureTime.SetValue(11000)
-    # camera.Gain.SetValue(3)
-    # camera.BalanceWhiteAuto.SetValue("Continuous")
+
+    camera.Width.SetValue(camera.Width.Max)   # your desired width (must be ≤ Max)
+    camera.Height.SetValue(camera.Height.Max)
+    camera.PixelFormat.SetValue("RGB8")
+    camera.ExposureAuto.SetValue("Off")
+    camera.GainAuto.SetValue("Off")
+    camera.BalanceWhiteAuto.SetValue("Continuous")
+    camera.ExposureTime.SetValue(7500)
+    camera.Gain.SetValue(17)
     camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
     grab_result = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-    if grab_result is None:
-        print("❌ RetrieveResult returned None")
-        return
-    if not grab_result.GrabSucceeded():
-        print("❌ Grab failed:", grab_result.ErrorCode, grab_result.ErrorDescription)
-        return
-
-    img = grab_result.Array
-    if img is None or img.size == 0:
-        print("❌ Empty frame received")
 
     frame = cv2.resize(grab_result.Array, (0,0), fx=0.5, fy=0.5)
     print("Initialized")
+
+    # Initialize VideoWriter with frame size
+    # height, width = frame.shape[:2]
+    # fourcc = cv2.VideoWriter_fourcc(*'XVID')  # or 'MP4V' for mp4
+    # out = cv2.VideoWriter('tracker_output.avi', fourcc, 20.0, (width, height))
 
 async def getNextBallInstance(ballColor):
     global point
@@ -74,6 +74,7 @@ async def getNextBallInstance(ballColor):
     global distCoeff
     global cam_matrix
     global camera 
+    global out
     rval = True
     circles = None
     while camera.IsGrabbing() and circles is None:
@@ -83,11 +84,13 @@ async def getNextBallInstance(ballColor):
         grab_result.Release()
         circles = GetLocation(frame, ballColor)
 
-        DrawCircles(frame, circles, (255, 0, 0))
-        cv2.imshow("Tracker", frame)
-        key = cv2.waitKey(5)
-        if key == 27:
-            break
+        # DrawCircles(frame, circles, (255, 0, 0))
+        # cv2.imshow("Tracker", frame)
+        # if out is not None:
+        #     out.write(frame)
+        # key = cv2.waitKey(5)
+        # if key == 27:
+        #     break
 
         if circles is None:
             return None
@@ -111,7 +114,7 @@ def getCameraSize():
     return frame.shape[:2]
 def GetLocation(frame, color):
     # Uncomment for gaussian blur
-    blurred = cv2.GaussianBlur(frame, (7, 7), 0)
+    blurred = cv2.GaussianBlur(frame, (5, 5), 0)
     # blurred = cv2.medianBlur(frame,11)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     if color == 'r':
@@ -129,15 +132,15 @@ def GetLocation(frame, color):
     if color == 'y':
         mask = cv2.inRange(hsv, yellowLowMask, yellowHighMask)
     # Perform erosion and dilation in the image (in 11x11 pixels squares) in order to reduce the "blips" on the mask
-    mask = cv2.erode(mask, np.ones((3, 3),np.uint8), iterations=2) ## change if hard to detect ball
-    mask = cv2.dilate(mask, np.ones((3, 3),np.uint8), iterations=4)
+    mask = cv2.erode(mask, np.ones((3, 3),np.uint8), iterations=1) ## change if hard to detect ball
+    mask = cv2.dilate(mask, np.ones((3, 3),np.uint8), iterations=3)
     # Mask the blurred image so that we only consider the areas with the desired colour
     masked_blurred = cv2.bitwise_and(blurred,blurred, mask= mask)
     # masked_blurred = cv2.bitwise_and(frame,frame, mask= mask)
     # Convert the masked image to gray scale (Required by HoughCircles routine)
     result = cv2.cvtColor(masked_blurred, cv2.COLOR_BGR2GRAY)
     # Detect circles in the image using Canny edge and Hough transform
-    circles = cv2.HoughCircles(result, cv2.HOUGH_GRADIENT, 1.5, 300, param1=100, param2=20, minRadius=5, maxRadius=200)
+    circles = cv2.HoughCircles(result, cv2.HOUGH_GRADIENT, 1.2, 300, param1=100, param2=20, minRadius=5, maxRadius=50)
     return circles
 
 def DrawCircles(frame, circles, dotColor):
@@ -153,76 +156,13 @@ def DrawCircles(frame, circles, dotColor):
             cv2.circle(frame, (x, y), r, (0, 255, 0), 4)
             cv2.rectangle(frame, (x - 5, y - 5), (x + 5, y + 5), dotColor, -1)
 
-def Calibrate_Accurate(num_frames=15):
-    global point
-    global frame
-    global distCoeff
-    global cam_matrix
-
-    # --- ArUco dictionary and Charuco board ---
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    parameters = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(dictionary, parameters)
-
-    board = cv2.aruco.CharucoBoard(
-        size=(5, 7),
-        squareLength=0.04, # m
-        markerLength=0.02, # m
-        dictionary=dictionary
-    )
-
-    # Storage for valid corners/ids
-    left_corners_list = []
-    ids_list = []
-    img_size = None
-
-    print("Collecting frame pairs for calibration...")
-
-    while len(left_corners_list) < num_frames:
-        # Grab the latest frames from TrackerThread
-        input("Press Enter to sample a frame (", len(left_corners_list)+1, "out of", num_frames, "): ")
-        frame = frame
-
-        if frame is None:
-            time.sleep(0.1)
-            continue
-
-        # --- Process camera ---
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = detector.detectMarkers(gray)
-        if ids is not None and len(ids) > 0:
-            charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
-                markerCorners=corners,
-                markerIds=ids,
-                image=gray,
-                board=board
-            )
-            if charuco_ids is not None and len(charuco_ids) > 3:
-                left_corners_list.append(charuco_corners)
-                ids_list.append(charuco_ids)
-                img_size = gray.shape[::-1]
-
-    # --- Calibrate camera ---
-    retVal, cam_matrix, distCoeff, _, _ = cv2.aruco.calibrateCameraCharuco(
-        charucoCorners=left_corners_list,
-        charucoIds=ids_list,
-        board=board,
-        imageSize=img_size,
-        cameraMatrix=None,
-        distCoeffs=None
-    )
-
-    print("Calibration complete!")
-    print("Right camera matrix:", cam_matrix)
-    print("Right camera distortion coeffecients:", distCoeff)
-
 
 def Calibrate(num_frames=15):
     global point
     global frame
     global distCoeff
     global cam_matrix
-    size = (9,7)
+    size = (9,6)
     square_size = 0.027 # m
 
     corners_list = []
@@ -262,7 +202,7 @@ def Calibrate(num_frames=15):
 
 async def main():
     await TrackerInitialize()
-    Calibrate()
+    # Calibrate()
     next = input("stop program?")
     while (next != "y"):
         print(await getNextBallInstance('y'))
@@ -270,4 +210,68 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
+
+    # def Calibrate_Accurate(num_frames=15):
+    # global point
+    # global frame
+    # global distCoeff
+    # global cam_matrix
+
+    # # --- ArUco dictionary and Charuco board ---
+    # dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    # parameters = cv2.aruco.DetectorParameters()
+    # detector = cv2.aruco.ArucoDetector(dictionary, parameters)
+
+    # board = cv2.aruco.CharucoBoard(
+    #     size=(5, 7),
+    #     squareLength=0.04, # m
+    #     markerLength=0.02, # m
+    #     dictionary=dictionary
+    # )
+
+    # # Storage for valid corners/ids
+    # left_corners_list = []
+    # ids_list = []
+    # img_size = None
+
+    # print("Collecting frame pairs for calibration...")
+
+    # while len(left_corners_list) < num_frames:
+    #     # Grab the latest frames from TrackerThread
+    #     input("Press Enter to sample a frame (", len(left_corners_list)+1, "out of", num_frames, "): ")
+    #     frame = frame
+
+    #     if frame is None:
+    #         time.sleep(0.1)
+    #         continue
+
+    #     # --- Process camera ---
+    #     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #     corners, ids, _ = detector.detectMarkers(gray)
+    #     if ids is not None and len(ids) > 0:
+    #         charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
+    #             markerCorners=corners,
+    #             markerIds=ids,
+    #             image=gray,
+    #             board=board
+    #         )
+    #         if charuco_ids is not None and len(charuco_ids) > 3:
+    #             left_corners_list.append(charuco_corners)
+    #             ids_list.append(charuco_ids)
+    #             img_size = gray.shape[::-1]
+
+    # # --- Calibrate camera ---
+    # retVal, cam_matrix, distCoeff, _, _ = cv2.aruco.calibrateCameraCharuco(
+    #     charucoCorners=left_corners_list,
+    #     charucoIds=ids_list,
+    #     board=board,
+    #     imageSize=img_size,
+    #     cameraMatrix=None,
+    #     distCoeffs=None
+    # )
+
+    # print("Calibration complete!")
+    # print("Right camera matrix:", cam_matrix)
+    # print("Right camera distortion coeffecients:", distCoeff)
     

@@ -358,7 +358,7 @@ class Tracker:
 if __name__ == '__main__':
     t = Tracker('b')
     input("Press enter to Calibrate")
-    t.Calibrate()
+    # t.Calibrate()
     while 1:
         input("enter to getLocation")
         t.getAccurateBallPosition()

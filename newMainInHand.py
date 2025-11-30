@@ -103,7 +103,7 @@ async def main():
 
     # await initMotors()
     await newEyeInHand.TrackerInitialize()
-    newEyeInHand.Calibrate()
+    # newEyeInHand.Calibrate()
     height,width = newEyeInHand.getCameraSize()
     print("camera height =", height)
     print("camera width =", width)
@@ -123,7 +123,8 @@ async def main():
     new_pos = start
     prev_time = time.time()
     count = 0
-    while count < 5:
+    start_time = prev_time
+    while count < 3:
         if new_pos is not None:
             new_u, new_v = new_pos
             count = 0
@@ -134,15 +135,17 @@ async def main():
         dt = time.time() - prev_time
         prev_time = time.time()
         x, P = updateKalman(x, P, new_u, new_v, dt)
-        err_x = cx - x[0,0]
-        err_y = cy - x[1,0]
+        err_x = (x[0,0]) /width
+        err_y = (x[1,0]) / height
         if (new_u is not None):
-            print("Actual position =", cx - new_u, cy - new_v)
-        print("Predicted position =", err_x, err_y)
-
-        # positions = calculateMotorPositions(err_x,err_y)
+            # positions = calculateMotorPositions(err_x,err_y)
+            print("Actual position =", (new_u) / width , (new_v) / height )
+        else:
+            print("Predicted position =", err_x, err_y)
+            # positions = calculateMotorPositions(err_x,err_y)
         # await moveMotors(positions)
         new_pos = await newEyeInHand.getNextBallInstance(ballColor)
+    print(str(time.time() - start_time), "s")
 
 
 if __name__ == "__main__":

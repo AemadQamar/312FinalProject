@@ -46,7 +46,7 @@ async def TrackerInitialize():
     print("hello")
     # Get the cameras
 
-    cam = cv2.VideoCapture(0)
+    cam = cv2.VideoCapture(1)
 
     print("Cam opened:", cam.isOpened())
 
@@ -73,10 +73,10 @@ async def getNextBallInstance(ballColor):
             return None
         point = circles[0]
         # Shows the original image with the detected circle drawn.
-        cv2.imshow("Tracker", frame)
-        key = cv2.waitKey(5)
-        if key == 27:
-            break
+        # cv2.imshow("Tracker", frame)
+        # key = cv2.waitKey(5)
+        # if key == 27:
+        #     break
     return (point[0][:2])
 
 async def TrackerClose():
@@ -235,11 +235,14 @@ def Calibrate(num_frames=15):
     print("Camera matrix:", cam_matrix)
     print("Camera distortion coeffecients:", distCoeff)
 
-
-if __name__ == '__main__':
-    TrackerInitialize()
+async def main():
+    await TrackerInitialize()
     next = input("stop program?")
     while (next != "y"):
-        print(getNextBallInstance('b'))
+        print(await getNextBallInstance('b'))
         next = input("stop program?")
-    TrackerClose()
+    await TrackerClose()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+    
