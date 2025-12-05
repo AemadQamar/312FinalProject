@@ -25,7 +25,7 @@ greenLowMask= (90, 50, 50)
 greenHighMask= (150, 255, 255)
 
 # If the ball is yellow
-yellowLowMask = (20, 100, 100)
+yellowLowMask = (20, 115, 100)
 yellowHighMask = (35, 255, 255)
 ########################################
 
@@ -35,6 +35,10 @@ camera = None
 point = None
 frame = None
 out = None
+half_size = 400
+size = None
+cx = None
+cy = None
 
 async def TrackerInitialize():
     global point
@@ -43,6 +47,10 @@ async def TrackerInitialize():
     global cam_matrix
     global camera
     global out
+    global half_size
+    global size
+    global cx
+    global cy
 
     print("Tracker Started")
     # Get the cameras
@@ -61,6 +69,16 @@ async def TrackerInitialize():
     grab_result = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
 
     frame = cv2.resize(grab_result.Array, (0,0), fx=0.5, fy=0.5)
+    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    size = getCameraSize()
+    cx = size[1] // 2
+    cy = size[0] // 2
+    x1 = cx - half_size
+    x2 = cx + half_size
+    y1 = cy - half_size
+    y2 = cy + half_size
+    frame = frame[y1:y2, x1:x2]
+
     print("Initialized")
 
     # Initialize VideoWriter with frame size
@@ -75,22 +93,33 @@ async def getNextBallInstance(ballColor):
     global cam_matrix
     global camera 
     global out
+    global half_size
+    global size
+    global cx
+    global cy
+
     rval = True
     circles = None
     while camera.IsGrabbing() and circles is None:
         # Handle current frame for camera
         grab_result = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-        frame = cv2.resize(grab_result.Array[:, :, ::-1], (0,0), fx=0.5, fy=0.5)
+        dist_frame = cv2.resize(grab_result.Array[:, :, ::-1], (0,0), fx=0.5, fy=0.5)
+        x1 = cx - half_size
+        x2 = cx + half_size
+        y1 = cy - half_size
+        y2 = cy + half_size
+        frame = dist_frame[y1:y2, x1:x2]
+        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         grab_result.Release()
         circles = GetLocation(frame, ballColor)
 
-        # DrawCircles(frame, circles, (255, 0, 0))
-        # cv2.imshow("Tracker", frame)
-        # if out is not None:
-        #     out.write(frame)
-        # key = cv2.waitKey(5)
-        # if key == 27:
-        #     break
+        DrawCircles(frame, circles, (255, 0, 0))
+        cv2.imshow("Tracker", frame)
+        if out is not None:
+            out.write(frame)
+        key = cv2.waitKey(5)
+        if key == 27:
+            break
 
         if circles is None:
             return None
@@ -132,8 +161,8 @@ def GetLocation(frame, color):
     if color == 'y':
         mask = cv2.inRange(hsv, yellowLowMask, yellowHighMask)
     # Perform erosion and dilation in the image (in 11x11 pixels squares) in order to reduce the "blips" on the mask
-    mask = cv2.erode(mask, np.ones((3, 3),np.uint8), iterations=1) ## change if hard to detect ball
-    mask = cv2.dilate(mask, np.ones((3, 3),np.uint8), iterations=3)
+    mask = cv2.erode(mask, np.ones((3, 3),np.uint8), iterations=2) ## change if hard to detect ball
+    mask = cv2.dilate(mask, np.ones((3, 3),np.uint8), iterations=4)
     # Mask the blurred image so that we only consider the areas with the desired colour
     masked_blurred = cv2.bitwise_and(blurred,blurred, mask= mask)
     # masked_blurred = cv2.bitwise_and(frame,frame, mask= mask)
@@ -150,7 +179,7 @@ def DrawCircles(frame, circles, dotColor):
         circles = np.round(circles[0, :]).astype("int")
         # loop over the (x, y) coordinates and radius of the circles
         for (x, y, r) in circles:
-            #print("Circle: " + "("+str(x)+","+str(y)+")")
+            print("Circle: " + "("+str(x)+","+str(y)+")")
             # draw the circle in the output image, then draw a rectangle corresponding to the center of the circle
             # The circles and rectangles are drawn on the original image.
             cv2.circle(frame, (x, y), r, (0, 255, 0), 4)

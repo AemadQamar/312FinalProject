@@ -1,11 +1,12 @@
 
 import asyncio
-import inverse_kin
+import tracker_kinematics
 import numpy as np
 import argparse
 import math
 import moteus
 import time
+import motor_control
 import newEyeInHand
 
 transport = None
@@ -13,14 +14,6 @@ servos = None
 lengths_origin = [0,0,0] ## measure this
 positions_per_meter = 1 # m/position unit , measure this
 
-def calculateMotorPositions(err_x, err_y):
-    scale = 0.2
-    err_x *= scale
-    err_y *= scale
-    # delta_rope_lengths = inverse_kin.rope_lengths([err_x, err_y]) ## rope_lengths should calculate kinematics to change by that amount
-    # positions = delta_rope_lengths* positions_per_meter
-    positions = None
-    return positions
 
 def updateKalman(x, P, new_u, new_v, dt):
     """
@@ -96,12 +89,16 @@ async def moveMotors(positions):
     await transport.cycle(commands)
 
 async def main():
+    wait_time = 0.1
+    step_size = 8 ## cm
     ballColor = 'y'
     x = np.zeros((5,1))
     x[4,0] = -200 ## initial gravity guess
     P = np.eye(5)
 
     # await initMotors()
+    await motor_control.init_motors()
+    await motor_control.move_to_positions([0.6, 0.8, 0.8, 0.6])
     await newEyeInHand.TrackerInitialize()
     # newEyeInHand.Calibrate()
     height,width = newEyeInHand.getCameraSize()
@@ -124,7 +121,7 @@ async def main():
     prev_time = time.time()
     count = 0
     start_time = prev_time
-    while count < 3:
+    while True:
         if new_pos is not None:
             new_u, new_v = new_pos
             count = 0
@@ -138,12 +135,22 @@ async def main():
         err_x = (x[0,0]) /width
         err_y = (x[1,0]) / height
         if (new_u is not None):
-            # positions = calculateMotorPositions(err_x,err_y)
-            print("Actual position =", (new_u) / width , (new_v) / height )
+
+            u = -2*(new_u - cx) / width
+            v = -2*(new_v -cy) / height
+            # print("Actual position =",u,v)
+            print("Camera position:", u,v, "Step size:", step_size, "Wait time:", wait_time)
+            inRange, positions, velocities = tracker_kinematics.tracker_step(u, v, step_size, wait_time)
         else:
-            print("Predicted position =", err_x, err_y)
-            # positions = calculateMotorPositions(err_x,err_y)
-        # await moveMotors(positions)
+            inRange = False
+            # print("Predicted position =", err_x, err_y)
+            # inRange, positions, velocities = tracker_kinematics.tracker_step(-err_x, -err_y, step_size, wait_time)
+        
+        if(inRange):
+            await motor_control.move_to_positions(positions, velocities, wait_time)
+            # await moveMotors(positions)
+        else:
+            print("Out of Range")
         new_pos = await newEyeInHand.getNextBallInstance(ballColor)
     print(str(time.time() - start_time), "s")
 
